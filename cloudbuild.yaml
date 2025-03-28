@@ -1,0 +1,40 @@
+steps:
+  # Step 1: Upload CSV to Cloud Storage
+  - name: "gcr.io/cloud-builders/gsutil"
+    args: ["cp", "customers_accounts.csv", "gs://spanner_database/"]
+
+  # Step 2: Deploy Cloud Function to Process CSV and Load into Spanner
+  - name: "gcr.io/cloud-builders/gcloud"
+    args:
+      - functions
+      - deploy
+      - process_csv_to_spanner
+      - --runtime=python311
+      - --trigger-bucket=spanner_database
+      - --entry-point=process_csv
+      - --region=us-central1
+      - --set-env-vars=SPANNER_INSTANCE=bank-customer-instance,SPANNER_DATABASE=ybank-customer-db
+
+  # Step 3: Deploy Cloud Run Webhook to Query Data
+  - name: "gcr.io/cloud-builders/gcloud"
+    args:
+      - run
+      - deploy
+      - customer-query-webhook
+      - --image=gcr.io/$resolute-winter-447814-t5/customer-query-webhook
+      - --platform=managed
+      - --region=us-central1
+      - --allow-unauthenticated
+      - --set-env-vars=set-env-vars=SPANNER_INSTANCE=bank-customer-instance,SPANNER_DATABASE=ybank-customer-db
+
+  # Step 4: Notify via Pub/Sub (Optional)
+  - name: "gcr.io/cloud-builders/gcloud"
+    args:
+      - pubsub
+      - topics
+      - publish
+      - cloud-build-notifications
+      - --message='Cloud Build process complete! CSV uploaded, Spanner updated, Webhook deployed.'
+
+images:
+  - gcr.io/$resolute-winter-447814-t5/customer-query-webhook
